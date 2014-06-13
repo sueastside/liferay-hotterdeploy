@@ -147,7 +147,7 @@ class OnFileChangedHandler(pyinotify.ProcessEvent):
         if portlet_name:
             if all(not event.pathname.endswith(ext) for ext in self.extensions):
                 return
-            rel_path = event.pathname.split(cwd)[1][1:]
+            rel_path = event.pathname.split(cwd+'/src/main/webapp')[1][1:]
                 
             #Find latest dir
             latest_subdir = self.hotterDeployer.find_latest_temp_dir(portlet_name)
