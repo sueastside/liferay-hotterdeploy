@@ -9,10 +9,10 @@ portlets and hot-copy them on changes, without the need for a redeployment.
 It also offers an alternative to the liferay 'deploy' directory, 
 called 'hotterdeploy' which can detect conflicting jar changes and will
 automatically undeploy and redeploy the affected portlet.
-(Change the liferay.auto.deploy.dir property in your settings.xml accordingly
- e.g. <liferay.auto.deploy.dir>
+(Change the `liferay.auto.deploy.dir` property in your settings.xml accordingly
+ e.g. `<liferay.auto.deploy.dir>
         /liferay-developer-studio/liferay-portal-6.2-ee-sp3/hotterdeploy
-      </liferay.auto.deploy.dir>)
+      </liferay.auto.deploy.dir>`)
       
 Notes
 ----- 
@@ -22,18 +22,18 @@ Installation
 ----- 
 Checkout Hotterdeploy
  ```
-    git clone https://github.com/sueastside/liferay-hotterdeploy.git
+ git clone https://github.com/sueastside/liferay-hotterdeploy.git
  ```
  
 Install Hotterdeploy
  ```
-    cd liferay-hotterdeploy
-    sudo python setup.py install
+ cd liferay-hotterdeploy
+ sudo python setup.py install
  ```
 
  
 Usage
 ----- 
  ```
-    hotterdeploy "/home/user/workspace" "/home/user/liferay-developer-studio/liferay-portal-6.2-ee-sp3/tomcat-7.0.42"
+ hotterdeploy "/home/user/workspace" "/home/user/liferay-developer-studio/liferay-portal-6.2-ee-sp3/tomcat-7.0.42"
  ```
