@@ -14,6 +14,11 @@ automatically undeploy and redeploy the affected portlet.
         /liferay-developer-studio/liferay-portal-6.2-ee-sp3/hotterdeploy
       </liferay.auto.deploy.dir>`)
       
+If you have a [LiveReload](http://feedback.livereload.com/knowledgebase/articles/86242-how-do-i-install-and-use-the-browser-extensions-) 
+extension installed, your browser will automatically reload the page 
+when it detects a changed resource or redeployed portlet.
+
+      
 Notes
 ----- 
 As this uses inotify to detect changed files, it is linux only at the moment.

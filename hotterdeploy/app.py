@@ -34,7 +34,9 @@ class HotterDeployer(object):
         self.workspace_directory = workspace_directory
         self.tomcat_directory = tomcat_directory
         self.portlets = {}
+        self.themes = {}
         self.deploys = {}
+        self.theme_deploys = {}
         self.wm = pyinotify.WatchManager()
         self.notifier = pyinotify.Notifier(self.wm)
         
@@ -44,9 +46,13 @@ class HotterDeployer(object):
             os.mkdir(self.hotterdeploy_dir)
         self.wm.add_watch(self.hotterdeploy_dir, pyinotify.IN_CLOSE_WRITE, rec=False, auto_add=False, proc_fun=OnDeployHandler(hotterDeployer=self))
         
-        # Scan tomcat directory for deployed portlets
+        # Scan tomcat temp directory for deployed portlets
         self._scan_temp()
         self.wm.add_watch(os.path.join(tomcat_directory, 'temp'), pyinotify.IN_CREATE | pyinotify.IN_DELETE, rec=False, auto_add=False, proc_fun=OnTempDeployHandler(hotterDeployer=self))
+        
+        # Scan tomcat webapps directory for deployed portlets
+        self._scan_webapps()
+        self.wm.add_watch(os.path.join(tomcat_directory, 'webapps'), pyinotify.IN_CREATE | pyinotify.IN_DELETE, rec=False, auto_add=False, proc_fun=OnWebappsDeployHandler(hotterDeployer=self))
          
         # Scan the working directory for portlets
         self._scan_wd(workspace_directory)
@@ -63,8 +69,18 @@ class HotterDeployer(object):
                             rec=True, auto_add=True, proc_fun=OnFileChangedHandler(hotterDeployer=self),
                             exclude_filter=exclude_filter)
         
+        # Start LiveReload
+        from threading import Thread
+        from livereload import Server
+        self.livereload_server = Server()
+        t = Thread(target=self.livereload_server.serve)
+        t.start()
+    
         self._print_status()
         self.notifier.loop()
+        
+        self.livereload_server.stop()
+        t.join()
 
     def __del__(self):
         if os.path.exists(self.hotterdeploy_dir):
@@ -72,9 +88,14 @@ class HotterDeployer(object):
         
     def _print_status(self):
         print '='*70
+        print 'Portlets:'
         for path, portlet_name in self.portlets.items():
             deployed = portlet_name in self.deploys
-            print '{0: <50}: {1}'.format(portlet_name, 'DEPLOYED' if deployed else ' - ')
+            print ' * {0: <50}: {1}'.format(portlet_name, 'DEPLOYED' if deployed else ' - ')
+        print 'themes:'
+        for path, theme_name in self.themes.items():
+            deployed = theme_name in self.theme_deploys
+            print ' * {0: <50}: {1}'.format(theme_name, 'DEPLOYED' if deployed else ' - ')
             
     def _scan_wd(self, directory):
        for file_name in os.listdir(directory):
@@ -82,12 +103,26 @@ class HotterDeployer(object):
            if os.path.isdir(path) and file_name != '.svn' and file_name != 'target':
                self._scan_wd(path)
            else:
+               '''
                if file_name == 'portlet.xml':
                    xmldoc = minidom.parse(path)
                    portlet_name = xmldoc.getElementsByTagName('portlet-name')[0].firstChild.nodeValue
                    webapp_path = os.path.abspath(os.path.join(directory, '..', '..', '..', '..'))
                    #print portlet_name, webapp_path
                    self.portlets[webapp_path] = portlet_name
+               '''
+               if file_name == 'liferay-look-and-feel.xml':
+                   xmldoc = minidom.parse(path)
+                   portlet_name = xmldoc.getElementsByTagName('theme')[0].attributes['name'].value
+                   webapp_path = os.path.abspath(os.path.join(directory, '..', '..', '..', '..'))
+                   self.themes[webapp_path] = portlet_name
+               elif file_name == 'liferay-plugin-package.properties' and not os.path.exists(os.path.join(directory, 'liferay-look-and-feel.xml')):
+                    with open(path) as prop:
+                        p = Properties()
+                        p.load(prop)
+                        portlet_name = p['name']
+                        webapp_path = os.path.abspath(os.path.join(directory, '..', '..', '..', '..'))
+                        self.portlets[webapp_path] = portlet_name
     
     def _scan_temp(self):
         path = os.path.join(self.tomcat_directory, 'temp')
@@ -107,7 +142,18 @@ class HotterDeployer(object):
             deploys[portlet_name] = max(deploy_paths, key=os.path.getmtime)
             
         self.deploys = deploys
-
+    
+    def _scan_webapps(self):
+        path = os.path.join(self.tomcat_directory, 'webapps')
+        deploys = {}
+        # Collect the temp deploy dirs for all portlets
+        for deploy in os.listdir(path):
+            deploy_path = os.path.join(path, deploy)
+            if os.path.isdir(deploy_path):
+                deploys[deploy] = deploy_path
+            
+        self.theme_deploys = deploys
+            
     def find_latest_temp_dir(self, portlet_name):
         '''
         Find the latest temp deploy directory for a given portlet:
@@ -115,6 +161,10 @@ class HotterDeployer(object):
         '''
         latest_subdir = self.deploys.get(portlet_name, None)
         return latest_subdir
+        
+    def trigger_browser_reload(self):
+        print 'reloading browser'
+        self.livereload_server.reload()
         
 
 class OnTempDeployHandler(pyinotify.ProcessEvent):
@@ -125,6 +175,14 @@ class OnTempDeployHandler(pyinotify.ProcessEvent):
         self.hotterDeployer._print_status()
 
 
+
+class OnWebappsDeployHandler(pyinotify.ProcessEvent):
+    def my_init(self, hotterDeployer):
+        self.hotterDeployer = weakref.proxy(hotterDeployer)
+    def process_default(self, event):
+        self.hotterDeployer._scan_webapps()
+        self.hotterDeployer._print_status()
+        
 class WorkSpaceHandler(pyinotify.ProcessEvent):
     def my_init(self, hotterDeployer):
         self.hotterDeployer = weakref.proxy(hotterDeployer)
@@ -138,11 +196,12 @@ class WorkSpaceHandler(pyinotify.ProcessEvent):
 class OnFileChangedHandler(pyinotify.ProcessEvent):
     def my_init(self, hotterDeployer):
         self.hotterDeployer = weakref.proxy(hotterDeployer)
-        extension = '.jsp,.js,.css'
+        extension = '.jsp,.js,.css,.tag,.vm'
         self.extensions = extension.split(',')
        
     def process_IN_CLOSE_WRITE(self, event):
         cwd = event.pathname.split('/src/main/webapp')[0]
+        # Handle portlets
         portlet_name = self.hotterDeployer.portlets.get(cwd, None)
         if portlet_name:
             if all(not event.pathname.endswith(ext) for ext in self.extensions):
@@ -152,14 +211,37 @@ class OnFileChangedHandler(pyinotify.ProcessEvent):
             #Find latest dir
             latest_subdir = self.hotterDeployer.find_latest_temp_dir(portlet_name)
             if not latest_subdir:
-                print 'Skipped {0} ({1} not deployed)'.format(rel_path, portlet_name)
+                print '- Skipped {0} ({1} not deployed)'.format(rel_path, portlet_name)
             else:
                 dest_path = os.path.join(latest_subdir, rel_path)
-                print 'Copying {0} ({1}) [{2}]'.format(rel_path, portlet_name, os.path.basename(latest_subdir))
+                print '- Copying {0} ({1}) [{2}]'.format(rel_path, portlet_name, os.path.basename(latest_subdir))
                 if not os.path.exists(os.path.dirname(dest_path)):
                   os.makedirs(os.path.dirname(dest_path))
                 
                 shutil.copy2(event.pathname, dest_path)    
+                
+                self.hotterDeployer.trigger_browser_reload()
+                
+        # Handle themes
+        theme_name = self.hotterDeployer.themes.get(cwd, None)
+        if theme_name:
+            if all(not event.pathname.endswith(ext) for ext in self.extensions):
+                return
+            rel_path = event.pathname.split(cwd+'/src/main/webapp')[1][1:]
+            
+            #Find deploy dir
+            deploy_dir = self.hotterDeployer.theme_deploys.get(theme_name, None)
+            if not deploy_dir:
+                print '- Skipped {0} ({1} not deployed)'.format(rel_path, theme_name)
+            else:
+                dest_path = os.path.join(deploy_dir, rel_path)
+                print '- Copying {0} ({1}) [{2}]'.format(rel_path, theme_name, 'webapps/'+os.path.basename(deploy_dir))
+                if not os.path.exists(os.path.dirname(dest_path)):
+                  os.makedirs(os.path.dirname(dest_path))
+                
+                shutil.copy2(event.pathname, dest_path)    
+                
+                self.hotterDeployer.trigger_browser_reload()
                
 
 class OnDeployHandler(pyinotify.ProcessEvent):
@@ -167,7 +249,7 @@ class OnDeployHandler(pyinotify.ProcessEvent):
         self.hotterDeployer = weakref.proxy(hotterDeployer)
         
     def process_default(self, event):   
-        d = Deploy(event.pathname, self.hotterDeployer.tomcat_directory)
+        d = Deploy(self.hotterDeployer, event.pathname, self.hotterDeployer.tomcat_directory)
         d.start()  
 
 
@@ -175,7 +257,8 @@ class Deploy(Thread):
     '''
     Conditionally deploy a portlet war
     '''
-    def __init__(self, war_path, tomcat_directory):
+    def __init__(self, hotterDeployer, war_path, tomcat_directory):
+        self.hotterDeployer = weakref.proxy(hotterDeployer)
         self.war_path = war_path
         self.tomcat_directory = tomcat_directory
         super(Deploy, self).__init__()
@@ -186,14 +269,6 @@ class Deploy(Thread):
                 xmldoc = minidom.parse(xml)
                 portlet_name = xmldoc.getElementsByTagName('portlet-name')[0].firstChild.nodeValue
                 return portlet_name
-                
-    def _find_latest_temp_dir(self, portlet_name):
-        to = os.path.join(self.tomcat_directory, 'temp')
-        all_subdirs = [os.path.join(to, d) for d in os.listdir(to) if os.path.isdir(os.path.join(to, d)) and d.endswith(portlet_name)]
-        if len(all_subdirs):
-            latest_subdir = max(all_subdirs, key=os.path.getmtime)
-            return latest_subdir
-        return None
         
     def _undeploy(self, portlet_name):
         webapps_path = os.path.join(self.tomcat_directory, 'webapps', portlet_name)
@@ -206,35 +281,40 @@ class Deploy(Thread):
     def _deploy(self):
         dst = os.path.abspath(os.path.join(self.tomcat_directory, '..', 'deploy/'))
         shutil.move(self.war_path, dst)
+        return True
+          
+    def _wait_for_string_in_log(self, string, action):
+        with open(os.path.join(self.tomcat_directory, 'logs/catalina.out')) as f:
+            # Start listening to the log
+            f.seek(0, 2) # go to end
+            p = f.tell()
+            if action():
+                while True:
+                    f.seek(p)
+                    latest_data = f.read()
+                    p = f.tell()
+                    if latest_data:
+                        print latest_data
+                        print str(p).center(10).center(80, '=')
+                        if latest_data.find(string) != -1:
+                            break
                        
     def run(self):
         portlet_name = self._get_portlet_name()
-        latest_dir = self._find_latest_temp_dir(portlet_name)
+        latest_dir = self.hotterDeployer.find_latest_temp_dir(portlet_name)
         
         if latest_dir: 
             # The portlet seems to be deployed, let's compare
             needs_undeploy = check_for_lib_diffs(self.war_path, latest_dir)
             if needs_undeploy:
                 # We found lib differences
-                with open(os.path.join(self.tomcat_directory, 'logs/catalina.out')) as f:
-                    # Start listening to the log
-                    f.seek(0, 2) # go to end
-                    p = f.tell()
-                    if self._undeploy(portlet_name):
-                        # We undeployed, now wait for LifeRay to notice
-                        print 'Undeploying {0}'.format(portlet_name)
-                        while True:
-                            f.seek(p)
-                            latest_data = f.read()
-                            p = f.tell()
-                            if latest_data:
-                                print latest_data
-                                print str(p).center(10).center(80, '=')
-                                if latest_data.find('for '+portlet_name+' was unregistered') != -1:
-                                    break
+                # We undeployed, now wait for LifeRay to notice
+                print 'Undeploying {0}'.format(portlet_name)
+                self._wait_for_string_in_log('for '+portlet_name+' was unregistered', lambda: self._undeploy(portlet_name))
         
         print 'Deploying {0}'.format(portlet_name)
-        self._deploy()
+        self._wait_for_string_in_log('for '+portlet_name+' is available for use', lambda: self._deploy())
+        self.hotterDeployer.trigger_browser_reload()
         
         
 def check_for_lib_diffs(war_path, temp_portlet_path):
