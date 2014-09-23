@@ -103,26 +103,16 @@ class HotterDeployer(object):
            if os.path.isdir(path) and file_name != '.svn' and file_name != 'target':
                self._scan_wd(path)
            else:
-               '''
-               if file_name == 'portlet.xml':
+               # Deployed portlet name is derived from the war name
+               if file_name == 'pom.xml':
                    xmldoc = minidom.parse(path)
-                   portlet_name = xmldoc.getElementsByTagName('portlet-name')[0].firstChild.nodeValue
-                   webapp_path = os.path.abspath(os.path.join(directory, '..', '..', '..', '..'))
-                   #print portlet_name, webapp_path
+                   portlet_name = xmldoc.getElementsByTagName('artifactId')[0].firstChild.nodeValue
+                   if not any(map(lambda x: portlet_name.endswith('-'+x), ['portlet', 'hook', 'theme', 'web'])):
+                       portlet_name += '-'+xmldoc.getElementsByTagName('version')[0].firstChild.nodeValue
+                   #TODO: fetch the war name if its specified in the build config
+                   webapp_path = os.path.abspath(directory)
+                   print portlet_name, webapp_path
                    self.portlets[webapp_path] = portlet_name
-               '''
-               if file_name == 'liferay-look-and-feel.xml':
-                   xmldoc = minidom.parse(path)
-                   portlet_name = xmldoc.getElementsByTagName('theme')[0].attributes['name'].value
-                   webapp_path = os.path.abspath(os.path.join(directory, '..', '..', '..', '..'))
-                   self.themes[webapp_path] = portlet_name
-               elif file_name == 'liferay-plugin-package.properties' and not os.path.exists(os.path.join(directory, 'liferay-look-and-feel.xml')):
-                    with open(path) as prop:
-                        p = Properties()
-                        p.load(prop)
-                        portlet_name = p['name']
-                        webapp_path = os.path.abspath(os.path.join(directory, '..', '..', '..', '..'))
-                        self.portlets[webapp_path] = portlet_name
     
     def _scan_temp(self):
         path = os.path.join(self.tomcat_directory, 'temp')
@@ -257,8 +247,8 @@ class Deploy(Thread):
     '''
     Conditionally deploy a portlet war
     '''
-    def __init__(self, hotterDeployer, war_path, tomcat_directory):
-        self.hotterDeployer = weakref.proxy(hotterDeployer)
+    def __init__(self, hotterDeployer_weakref, war_path, tomcat_directory):
+        self.hotterDeployer = hotterDeployer_weakref
         self.war_path = war_path
         self.tomcat_directory = tomcat_directory
         super(Deploy, self).__init__()
@@ -324,8 +314,12 @@ def check_for_lib_diffs(war_path, temp_portlet_path):
     jars = {}
     # Calculate crc32 for all deployed jars
     for lib in os.listdir(os.path.join(temp_portlet_path, 'WEB-INF/lib/')):
-        with open(os.path.join(temp_portlet_path, 'WEB-INF/lib/', lib)) as jar:
-            jars['WEB-INF/lib/'+lib] = binascii.crc32(jar.read())
+        path = os.path.join(temp_portlet_path, 'WEB-INF/lib/', lib)
+        if os.path.isfile(path):
+            with open(os.path.join(temp_portlet_path, 'WEB-INF/lib/', lib)) as jar:
+                jars['WEB-INF/lib/'+lib] = binascii.crc32(jar.read())
+        else:
+            jars['WEB-INF/lib/'+lib] = None # directory assume changed
 
     # Process the war to be deployed
     with ZipFile(war_path, 'r') as war:
