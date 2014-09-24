@@ -41,6 +41,7 @@ class HotterDeployer(object):
         self.theme_deploys = {}
         self.wm = pyinotify.WatchManager()
         self.notifier = pyinotify.Notifier(self.wm)
+        self.print_status_enabled = True
         
         # Create our hotterdeploy directory and watch it for wars
         self.hotterdeploy_dir = os.path.abspath(os.path.join(tomcat_directory, '..', 'hotterdeploy'))
@@ -71,6 +72,18 @@ class HotterDeployer(object):
                             rec=True, auto_add=True, proc_fun=OnFileChangedHandler(hotterDeployer=self),
                             exclude_filter=exclude_filter)
         
+        
+        import signal
+
+        def handler(signum, frame):
+            print signum, ' pressed, shutting down'
+            self.notifier.stop()
+            self.livereload_server.stop()
+            
+
+        signal.signal(signal.SIGTSTP, handler)
+        signal.signal(signal.SIGINT, handler)
+        
         # Start LiveReload
         from threading import Thread
         from livereload import Server
@@ -78,26 +91,44 @@ class HotterDeployer(object):
         t = Thread(target=self.livereload_server.serve)
         t.start()
     
-        self._print_status()
+        
+        self._print_status(True)
         self.notifier.loop()
         
-        self.livereload_server.stop()
-        t.join()
 
     def __del__(self):
         if os.path.exists(self.hotterdeploy_dir):
             os.rmdir(self.hotterdeploy_dir)
         
-    def _print_status(self):
-        print '='*70
-        print 'Portlets:'
-        for path, portlet_name in self.portlets.items():
-            deployed = portlet_name in self.deploys
-            print ' * {0: <50}: {1}'.format(portlet_name, 'DEPLOYED' if deployed else ' - ')
-        print 'themes:'
-        for path, theme_name in self.themes.items():
-            deployed = theme_name in self.theme_deploys
-            print ' * {0: <50}: {1}'.format(theme_name, 'DEPLOYED' if deployed else ' - ')
+    def _print_status(self, initial=False):
+        if self.print_status_enabled:
+            from livereload import LiveReloadHandler
+            LiveReloadHandler.update_status = self._print_status
+            rows = 6 + len(self.portlets) + len(self.themes) + len(LiveReloadHandler.waiters)
+            if initial:
+                print("\033[2J")# clear from begin to cursor
+                print("\033[0;0H")# go to begin
+            if not initial:
+                print("\033[s")
+            print("\033["+str(rows)+";0H") # go to end of header
+            print("\033[1J") # clear from cursor to beginning
+            print("\033[0;0H")# go to begin
+            print 'Portlets:'
+            for path, portlet_name in self.portlets.items():
+                deployed = portlet_name in self.deploys
+                print ' * {0: <50}: {1}'.format(portlet_name, 'DEPLOYED' if deployed else ' - ')
+            print 'Themes:'
+            for path, theme_name in self.themes.items():
+                deployed = theme_name in self.theme_deploys
+                print ' * {0: <50}: {1}'.format(theme_name, 'DEPLOYED' if deployed else ' - ')
+            print '-'*70
+            print 'Client:'
+            for waiter in LiveReloadHandler.waiters:
+                print ' *', waiter.url
+            print '='*70
+            if not initial:
+                print("\033[u")
+
             
     def _scan_wd(self, directory):
        for file_name in os.listdir(directory):
@@ -145,6 +176,11 @@ class HotterDeployer(object):
                 deploys[deploy] = deploy_path
             
         self.theme_deploys = deploys
+        
+        for name, path in deploys.items():
+            if name.endswith('-portlet') and name not in self.deploys:
+                self.deploys[name] = path
+                
             
     def find_latest_temp_dir(self, portlet_name):
         '''
@@ -306,8 +342,7 @@ class Deploy(Thread):
                     if elapsed > datetime.timedelta(minutes=1):
                         raise DeploymentTimedOutException()
                     
-                       
-    def run(self):
+    def do(self):
         bundle_name = self._get_bundle_name()
         latest_dir = self.hotterDeployer.find_latest_temp_dir(bundle_name)
         
@@ -325,7 +360,16 @@ class Deploy(Thread):
             self._wait_for_string_in_log('for '+bundle_name+' (\w+) available for use', lambda: self._deploy())
             self.hotterDeployer.trigger_browser_reload()
         except DeploymentTimedOutException as e:
-            print 'Deployment of {0} failed!!!'.format(bundle_name)
+            print 'Deployment of {0} failed!!!'.format(bundle_name)  
+                                 
+    def run(self):
+        self.hotterDeployer.print_status_enabled = False
+        try:
+            self.do()
+        finally:
+            self.hotterDeployer.print_status_enabled = True
+            self.hotterDeployer._print_status()
+            
         
         
 def check_for_lib_diffs(war_path, temp_portlet_path):

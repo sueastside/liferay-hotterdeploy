@@ -72,8 +72,11 @@ class LiveReloadHandler(WebSocketHandler):
             self.send_message(handshake)
 
         if message.command == 'info' and 'url' in message:
-            print '- Client connected for url {0}'.format(message.url)
+            #print '- Client connected for url {0}'.format(message.url)
+            self.url = message.url
             LiveReloadHandler.waiters.add(self)
+            if hasattr(LiveReloadHandler, 'update_status'):
+                LiveReloadHandler.update_status()
 
 
 class LiveReloadJSHandler(RequestHandler):
