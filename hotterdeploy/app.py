@@ -23,6 +23,8 @@ import os
 import shutil
 import weakref
 import binascii
+import re
+import datetime
 from xml.dom import minidom
 from zipfile import ZipFile
 from pyjavaproperties import Properties
@@ -242,6 +244,8 @@ class OnDeployHandler(pyinotify.ProcessEvent):
         d = Deploy(self.hotterDeployer, event.pathname, self.hotterDeployer.tomcat_directory)
         d.start()  
 
+class DeploymentTimedOutException(Exception):
+    pass
 
 class Deploy(Thread):
     '''
@@ -259,7 +263,13 @@ class Deploy(Thread):
                 xmldoc = minidom.parse(xml)
                 portlet_name = xmldoc.getElementsByTagName('portlet-name')[0].firstChild.nodeValue
                 return portlet_name
-        
+    
+    def _get_bundle_name(self):
+        matcher = re.compile('(.+)-(\d\.\d\.\d(-SNAPSHOT)?)\.war')
+        war_name = os.path.basename(self.war_path)
+        match = matcher.match(war_name)
+        return match.group(1)
+            
     def _undeploy(self, portlet_name):
         webapps_path = os.path.join(self.tomcat_directory, 'webapps', portlet_name)
         if os.path.exists(webapps_path):
@@ -274,6 +284,8 @@ class Deploy(Thread):
         return True
           
     def _wait_for_string_in_log(self, string, action):
+        matcher = re.compile(string)
+        start = datetime.datetime.now()
         with open(os.path.join(self.tomcat_directory, 'logs/catalina.out')) as f:
             # Start listening to the log
             f.seek(0, 2) # go to end
@@ -284,27 +296,36 @@ class Deploy(Thread):
                     latest_data = f.read()
                     p = f.tell()
                     if latest_data:
-                        print latest_data
-                        print str(p).center(10).center(80, '=')
-                        if latest_data.find(string) != -1:
+                        #print latest_data
+                        #print str(p).center(10).center(80, '=')
+                        print '.',
+                        if matcher.search(latest_data):
                             break
+                    
+                    elapsed = datetime.datetime.now() - start
+                    if elapsed > datetime.timedelta(minutes=1):
+                        raise DeploymentTimedOutException()
+                    
                        
     def run(self):
-        portlet_name = self._get_portlet_name()
-        latest_dir = self.hotterDeployer.find_latest_temp_dir(portlet_name)
+        bundle_name = self._get_bundle_name()
+        latest_dir = self.hotterDeployer.find_latest_temp_dir(bundle_name)
         
-        if latest_dir: 
-            # The portlet seems to be deployed, let's compare
-            needs_undeploy = check_for_lib_diffs(self.war_path, latest_dir)
-            if needs_undeploy:
-                # We found lib differences
-                # We undeployed, now wait for LifeRay to notice
-                print 'Undeploying {0}'.format(portlet_name)
-                self._wait_for_string_in_log('for '+portlet_name+' was unregistered', lambda: self._undeploy(portlet_name))
-        
-        print 'Deploying {0}'.format(portlet_name)
-        self._wait_for_string_in_log('for '+portlet_name+' is available for use', lambda: self._deploy())
-        self.hotterDeployer.trigger_browser_reload()
+        try:
+            if latest_dir: 
+                # The portlet seems to be deployed, let's compare
+                needs_undeploy = check_for_lib_diffs(self.war_path, latest_dir)
+                if needs_undeploy:
+                    # We found lib differences
+                    # We undeployed, now wait for LifeRay to notice
+                    print 'Undeploying {0}'.format(bundle_name)
+                    self._wait_for_string_in_log('for '+bundle_name+' (\w+) unregistered', lambda: self._undeploy(bundle_name))
+            
+            print 'Deploying {0}'.format(bundle_name)
+            self._wait_for_string_in_log('for '+bundle_name+' (\w+) available for use', lambda: self._deploy())
+            self.hotterDeployer.trigger_browser_reload()
+        except DeploymentTimedOutException as e:
+            print 'Deployment of {0} failed!!!'.format(bundle_name)
         
         
 def check_for_lib_diffs(war_path, temp_portlet_path):
