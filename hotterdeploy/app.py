@@ -25,10 +25,31 @@ import weakref
 import binascii
 import re
 import datetime
+import signal
 from xml.dom import minidom
 from zipfile import ZipFile
 from pyjavaproperties import Properties
 from threading import Thread
+
+
+from livereload import Server
+
+class Console:
+    @classmethod
+    def clear_up(cls):
+        print("\033[1J")# clear from cursor to beginning
+    @classmethod
+    def clear_down(cls):
+        print("\033[2J")# clear from begin to cursor
+    @classmethod
+    def goto(cls, row, col):
+        print("\033["+str(row)+";"+str(col)+"H")
+    @classmethod
+    def save(cls):
+        print("\033[s")
+    @classmethod
+    def restore(cls):
+        print("\033[u")
 
 
 class HotterDeployer(object):
@@ -38,10 +59,8 @@ class HotterDeployer(object):
         self.portlets = {}
         self.themes = {}
         self.deploys = {}
-        self.theme_deploys = {}
         self.wm = pyinotify.WatchManager()
         self.notifier = pyinotify.Notifier(self.wm)
-        self.print_status_enabled = True
         
         # Create our hotterdeploy directory and watch it for wars
         self.hotterdeploy_dir = os.path.abspath(os.path.join(tomcat_directory, '..', 'hotterdeploy'))
@@ -72,64 +91,63 @@ class HotterDeployer(object):
                             rec=True, auto_add=True, proc_fun=OnFileChangedHandler(hotterDeployer=self),
                             exclude_filter=exclude_filter)
         
-        
-        import signal
 
         def handler(signum, frame):
             print signum, ' pressed, shutting down'
-            self.notifier.stop()
-            self.livereload_server.stop()
+            self.stop()
             
-
         signal.signal(signal.SIGTSTP, handler)
         signal.signal(signal.SIGINT, handler)
         
-        # Start LiveReload
-        from threading import Thread
-        from livereload import Server
-        self.livereload_server = Server()
-        t = Thread(target=self.livereload_server.serve)
-        t.start()
-    
+        try:
+            # Start LiveReload
+            self.livereload_server = Server()
+            t = Thread(target=self.livereload_server.serve)
+            t.start()
         
-        self._print_status(True)
-        self.notifier.loop()
-        
+            self._print_status(True)
+            self.notifier.loop()
+        finally:
+            self.stop()
 
     def __del__(self):
         if os.path.exists(self.hotterdeploy_dir):
             os.rmdir(self.hotterdeploy_dir)
+            
+    def stop(self):
+        self.notifier.stop()
+        self.livereload_server.stop() 
         
     def _print_status(self, initial=False):
-        if self.print_status_enabled:
-            from livereload import LiveReloadHandler
-            LiveReloadHandler.update_status = self._print_status
-            rows = 6 + len(self.portlets) + len(self.themes) + len(LiveReloadHandler.waiters)
-            if initial:
-                print("\033[2J")# clear from begin to cursor
-                print("\033[0;0H")# go to begin
-            if not initial:
-                print("\033[s")
-            print("\033["+str(rows)+";0H") # go to end of header
-            print("\033[1J") # clear from cursor to beginning
-            print("\033[0;0H")# go to begin
-            print 'Portlets:'
-            for path, portlet_name in self.portlets.items():
-                deployed = portlet_name in self.deploys
-                print ' * {0: <50}: {1}'.format(portlet_name, 'DEPLOYED' if deployed else ' - ')
-            print 'Themes:'
-            for path, theme_name in self.themes.items():
-                deployed = theme_name in self.theme_deploys
-                print ' * {0: <50}: {1}'.format(theme_name, 'DEPLOYED' if deployed else ' - ')
-            print '-'*70
-            print 'Client:'
-            for waiter in LiveReloadHandler.waiters:
-                print ' *', waiter.url
-            print '='*70
-            if not initial:
-                print("\033[u")
-
-            
+        #if self.print_status_enabled:
+        from livereload import LiveReloadHandler
+        LiveReloadHandler.update_status = self._print_status
+        rows = 7 + len(self.portlets) + len(self.themes) + len(LiveReloadHandler.waiters)
+        if initial:
+            Console.clear_down()
+            Console.goto(0, 0)
+        if not initial:
+            Console.save()
+        Console.goto(rows, 0)
+        Console.clear_up()
+        Console.goto(0, 0)
+        print 'Serving livereload on {host}:{port}'.format(**vars(self.livereload_server))
+        print 'Portlets:'
+        for path, portlet_name in self.portlets.items():
+            deployed = portlet_name in self.deploys
+            print ' * {0: <50}: {1}'.format(portlet_name, 'DEPLOYED' if deployed else ' - ')
+        print 'Themes:'
+        for path, theme_name in self.themes.items():
+            deployed = theme_name in self.deploys
+            print ' * {0: <50}: {1}'.format(theme_name, 'DEPLOYED' if deployed else ' - ')
+        print '-'*70
+        print 'Clients:'
+        for waiter in LiveReloadHandler.waiters:
+            print ' *', waiter.url
+        print '='*70
+        if not initial:
+            Console.restore()
+                
     def _scan_wd(self, directory):
        for file_name in os.listdir(directory):
            path = os.path.join(directory, file_name)
@@ -147,6 +165,19 @@ class HotterDeployer(object):
                    print portlet_name, webapp_path
                    self.portlets[webapp_path] = portlet_name
     
+    def _update_deploys(self):
+        deploys = {}
+        if hasattr(self, '_temp_deploys'):
+            for name, path in self._temp_deploys.items():
+                deploys[name] = path
+        
+        if hasattr(self, '_webapp_deploys'):
+            for name, path in self._webapp_deploys.items():
+                if name not in deploys:
+                    deploys[name] = path
+                
+        self.deploys = deploys
+        
     def _scan_temp(self):
         path = os.path.join(self.tomcat_directory, 'temp')
         deploys = {}
@@ -164,7 +195,8 @@ class HotterDeployer(object):
         for portlet_name, deploy_paths in deploys.items():
             deploys[portlet_name] = max(deploy_paths, key=os.path.getmtime)
             
-        self.deploys = deploys
+        self._temp_deploys = deploys
+        self._update_deploys()
     
     def _scan_webapps(self):
         path = os.path.join(self.tomcat_directory, 'webapps')
@@ -175,11 +207,8 @@ class HotterDeployer(object):
             if os.path.isdir(deploy_path):
                 deploys[deploy] = deploy_path
             
-        self.theme_deploys = deploys
-        
-        for name, path in deploys.items():
-            if name.endswith('-portlet') and name not in self.deploys:
-                self.deploys[name] = path
+        self._webapp_deploys = deploys
+        self._update_deploys()
                 
             
     def find_latest_temp_dir(self, portlet_name):
@@ -203,13 +232,13 @@ class OnTempDeployHandler(pyinotify.ProcessEvent):
         self.hotterDeployer._print_status()
 
 
-
 class OnWebappsDeployHandler(pyinotify.ProcessEvent):
     def my_init(self, hotterDeployer):
         self.hotterDeployer = weakref.proxy(hotterDeployer)
     def process_default(self, event):
         self.hotterDeployer._scan_webapps()
         self.hotterDeployer._print_status()
+
         
 class WorkSpaceHandler(pyinotify.ProcessEvent):
     def my_init(self, hotterDeployer):
@@ -249,27 +278,6 @@ class OnFileChangedHandler(pyinotify.ProcessEvent):
                 shutil.copy2(event.pathname, dest_path)    
                 
                 self.hotterDeployer.trigger_browser_reload()
-                
-        # Handle themes
-        theme_name = self.hotterDeployer.themes.get(cwd, None)
-        if theme_name:
-            if all(not event.pathname.endswith(ext) for ext in self.extensions):
-                return
-            rel_path = event.pathname.split(cwd+'/src/main/webapp')[1][1:]
-            
-            #Find deploy dir
-            deploy_dir = self.hotterDeployer.theme_deploys.get(theme_name, None)
-            if not deploy_dir:
-                print '- Skipped {0} ({1} not deployed)'.format(rel_path, theme_name)
-            else:
-                dest_path = os.path.join(deploy_dir, rel_path)
-                print '- Copying {0} ({1}) [{2}]'.format(rel_path, theme_name, 'webapps/'+os.path.basename(deploy_dir))
-                if not os.path.exists(os.path.dirname(dest_path)):
-                  os.makedirs(os.path.dirname(dest_path))
-                
-                shutil.copy2(event.pathname, dest_path)    
-                
-                self.hotterDeployer.trigger_browser_reload()
                
 
 class OnDeployHandler(pyinotify.ProcessEvent):
@@ -280,8 +288,10 @@ class OnDeployHandler(pyinotify.ProcessEvent):
         d = Deploy(self.hotterDeployer, event.pathname, self.hotterDeployer.tomcat_directory)
         d.start()  
 
+
 class DeploymentTimedOutException(Exception):
     pass
+
 
 class Deploy(Thread):
     '''
@@ -363,15 +373,10 @@ class Deploy(Thread):
             print 'Deployment of {0} failed!!!'.format(bundle_name)  
                                  
     def run(self):
-        self.hotterDeployer.print_status_enabled = False
-        try:
-            self.do()
-        finally:
-            self.hotterDeployer.print_status_enabled = True
-            self.hotterDeployer._print_status()
-            
-        
-        
+        self.do()
+        self.hotterDeployer._print_status()
+
+  
 def check_for_lib_diffs(war_path, temp_portlet_path):
     '''
     Checks whether the jars in a war and on a deployed path are the same

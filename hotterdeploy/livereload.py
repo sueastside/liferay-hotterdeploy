@@ -113,8 +113,9 @@ class ForceReloadHandler(RequestHandler):
 
 class Server(object):
     def __init__(self):
+        self.host = None
         self.port = 35729
-
+        
     def application(self):
         handlers = [
             (r'/livereload', LiveReloadHandler),
@@ -137,8 +138,8 @@ class Server(object):
 
         self.application().listen(self.port, address=host)
 
-        host = host or '127.0.0.1'
-        print('Serving on %s:%s' % (host, self.port))
+        self.host = host or '127.0.0.1'
+        #print('Serving on %s:%s' % (self.host, self.port))
 
         try:
             IOLoop.instance().start()
