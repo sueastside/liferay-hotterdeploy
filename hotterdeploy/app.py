@@ -232,9 +232,9 @@ class HotterDeployer(object):
         latest_subdir = self.deploys.get(portlet_name, None)
         return latest_subdir
 
-    def trigger_browser_reload(self):
+    def trigger_browser_reload(self, path=None):
         print 'reloading browser'
-        self.livereload_server.reload()
+        self.livereload_server.reload(path)
 
 
 class OnTempDeployHandler(pyinotify.ProcessEvent):
@@ -311,7 +311,10 @@ class OnFileChangedHandler(pyinotify.ProcessEvent):
                 print dest_path
                 shutil.copy2(event.pathname, dest_path)
 
-                self.hotterDeployer.trigger_browser_reload()
+                if rel_path.endswith('.css'):
+                    self.hotterDeployer.trigger_browser_reload(portlet_name+'/'+rel_path)
+                else:
+                    self.hotterDeployer.trigger_browser_reload()
 
 
 class OnClassChangedHandler(pyinotify.ProcessEvent):

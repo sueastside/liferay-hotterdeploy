@@ -32,15 +32,16 @@ class LiveReloadHandler(WebSocketHandler):
             logging.error('Error sending message', exc_info=True)
 
     @staticmethod
-    def reload():
+    def reload(path=None):
         logging.info('Reload %s waiters', len(LiveReloadHandler.waiters))
 
         msg = {
             'command': 'reload',
-            'path': '*',
-            'liveCSS': True
+            'path': path or '*',
+            'liveCSS': True,
+            'liveImg': True
         }
-
+        print 'sending', msg
         for waiter in LiveReloadHandler.waiters:
             try:
                 waiter.write_message(msg)
@@ -115,7 +116,7 @@ class Server(object):
     def __init__(self):
         self.host = None
         self.port = 35729
-        
+
     def application(self):
         handlers = [
             (r'/livereload', LiveReloadHandler),
@@ -145,13 +146,13 @@ class Server(object):
             IOLoop.instance().start()
         except KeyboardInterrupt:
             print('Shutting down...')
-            
+
     def stop(self):
         IOLoop.instance().stop()
 
-    def reload(self):
-        LiveReloadHandler.reload()
-        
+    def reload(self, path=None):
+        LiveReloadHandler.reload(path)
+
 def main():
     server = Server()
     from threading import Thread
@@ -166,6 +167,6 @@ def main():
     except KeyboardInterrupt:
         server.stop()
         t.join()
-    
+
 if __name__ == '__main__':
     main()
