@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="">
+    <meta name="author" content="">
+    <meta HTTP-EQUIV="refresh" CONTENT="5">
+    <title>Hotter Deploy</title>
+
+    <!-- Bootstrap core CSS -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.2/css/bootstrap-theme.min.css">
+
+
+    <!-- Custom styles for this template -->
+    <link href="http://getbootstrap.com/examples/dashboard/dashboard.css" rel="stylesheet">
+  </head>
+
+  <body>
+
+    <nav class="navbar navbar-inverse navbar-fixed-top">
+      <div class="container-fluid">
+        <div class="navbar-header">
+          <a class="navbar-brand" href="#">Hotter Deploy {{ now }}</a>
+        </div>
+        <div id="navbar" class="navbar-collapse collapse">
+          <ul class="nav navbar-nav navbar-right">
+            <li><a href="#">Dashboard</a></li>
+          </ul>
+          <form class="navbar-form navbar-right">
+            <input id="filter" class="form-control" placeholder="Search..." type="text">
+          </form>
+        </div>
+      </div>
+    </nav>
+
+    <div class="container-fluid">
+      <div class="row">
+        <div class="col-sm-3 col-md-2 sidebar">
+          <ul class="nav nav-sidebar">
+            <li class="active"><a href="#Information">Information</a></li>
+            <li><a href="#Connections">Connections</a></li>
+            <li><a href="#Log">Log</a></li>
+            <li><a href="#Portlets">Portlets</a></li>
+            <li><a href="#Themes">Themes</a></li>
+          </ul>
+        </div>
+        <div class="col-sm-9 col-sm-offset-3 col-md-10 col-md-offset-2 main">
+          <h1 class="page-header">Dashboard</h1>
+
+          <h2 id="Information" class="sub-header">Information</h2>
+          <div class="table-responsive">
+            <table class="table table-hover">
+              <tbody>
+                <tr>
+                  <td>Observer</td>
+                  <td>{% if ctx.do_polling %}
+                    Using polling
+                  {% else %}
+                    Using FS events
+                  {% endif %}
+                  </td>
+                </tr>
+                <tr>
+                  <td>Workspace</td>
+                  <td>{{ ctx.workspace_directory }}</td>
+                </tr>
+                <tr>
+                  <td>Tomcat directory</td>
+                  <td>{{ ctx.tomcat_directory }}</td>
+                </tr>
+                <tr>
+                  <td>Liferay context</td>
+                  <td>{{ ctx.liferay_context }}</td>
+                </tr>
+                <tr>
+                  <td>Hotter Deploy directory</td>
+                  <td>{{ ctx.hotterdeploy_dir }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h2 id="Connections" class="sub-header">
+            Connections
+            <span class="badge">{{ waiters|length }}</span>
+            </h2>
+          <div class="table-responsive">
+            <table class="table table-hover">
+              <tbody>
+                {% for waiter in waiters %}
+                <tr>
+                  <td><span class="glyphicon glyphicon-globe" aria-hidden="true"></span></td>
+                  <td>{{ waiter.url }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          <h2 id="Log" class="sub-header">
+            Log
+          </h2>
+          <div class="table-responsive">
+            <table class="table table-hover">
+              <thead>
+                <tr>
+                  <th>Level</th>
+                  <th>Message</th>
+                  <th>Module</th>
+                  <th>Line</th>
+                  <th>Time</th>
+                </tr>
+              </thead>
+              <tbody class="searchable">
+                {% for entry in ctx.memory_handler.buffer|reverse %}
+                  <tr>
+                    <td>{{ entry.levelname }}</td>
+                    <td>{{ entry.message }}</td>
+                    <td>{{ entry.module }}</td>
+                    <td>{{ entry.lineno }}</td>
+                    <td>{{ entry.msecs }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+
+          <h2 id="Portlets" class="sub-header">
+            Portlets
+            <span class="badge">{{ ctx.portlets|length }}</span>
+          </h2>
+          <div class="table-responsive">
+            <table class="table table-hover">
+              <thead>
+                <tr>
+                  <th>Portlet Context</th>
+                  <th>Deployed</th>
+                  <th>Workspace Path</th>
+                  <th>Deployment Path</th>
+                </tr>
+              </thead>
+              <tbody class="searchable">
+                {% for path, portlet_name in ctx.portlets.items() %}
+                  <tr>
+                    <td>{{ portlet_name }}</td>
+                    <td>{% if portlet_name in ctx.deploys %}<span class="label label-success">DEPLOYED</span>{% else %}-{% endif %}</td>
+                    <td>{{ path }}</td>
+                    <td>{{ ctx.deploys[portlet_name] }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          <h2 id="Themes" class="sub-header">
+            Themes
+            <span class="badge">{{ ctx.themes|length }}</span>
+          </h2>
+          <div class="table-responsive">
+            <table class="table table-hover">
+              <thead>
+                <tr>
+                  <th>Theme Context</th>
+                  <th>Deployed</th>
+                  <th>Workspace Path</th>
+                  <th>Deployment Path</th>
+                </tr>
+              </thead>
+              <tbody class="searchable">
+                {% for path, theme_name in ctx.themes.items() %}
+                  <tr>
+                    <td>{{ theme_name }}</td>
+                    <td>{% if theme_name in ctx.deploys %}<span class="label label-success">DEPLOYED</span>{% else %}-{% endif %}</td>
+                    <td>{{ path }}</td>
+                    <td>{{ ctx.deploys[portlet_name] }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.2/js/bootstrap.min.js"></script>
+    <script>
+    $(document).ready(function () {
+
+        (function ($) {
+
+            $('#filter').keyup(function () {
+
+                var rex = new RegExp($(this).val(), 'i');
+                $('.searchable tr').hide();
+                $('.searchable tr').filter(function () {
+                    return rex.test($(this).text());
+                }).show();
+
+            })
+
+        }(jQuery));
+
+        $('#filter').keyup();
+
+    });
+    </script>
+
+</body>
+</html>
