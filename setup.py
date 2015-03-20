@@ -18,6 +18,7 @@ config = {
         'tornado>=2.2.0',
     ],
     'packages': ['hotterdeploy'],
+	'data_files': [('hotterdeploy', ['hotterdeploy/livereload.js','hotterdeploy/index.html'])],
     'scripts': [],
     'name': 'hotterdeploy',
     'entry_points': {
