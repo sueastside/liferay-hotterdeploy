@@ -31,6 +31,7 @@ def filter_filename(file_name, patterns=[]):
 
 def scan_working_directory_for_portlet_contexts(directory):
     portlets = {}
+
     def get_version(xmldoc):
         els = getElementsByTagName(xmldoc, 'version')
         if len(els):
@@ -56,7 +57,7 @@ def scan_working_directory_for_portlet_contexts(directory):
                 portlet_name = getElementsByTagName(xmldoc, 'artifactId')[0].firstChild.nodeValue
                 if not any(map(lambda x: portlet_name.endswith('-'+x), ['portlet', 'hook', 'theme', 'web', 'layouttpl'])):
                     portlet_name += '-'+get_version(xmldoc)
-                #TODO: fetch the war name if its specified in the build config
+                # TODO: fetch the war name if its specified in the build config
                 webapp_path = os.path.abspath(directory)
                 portlets[webapp_path] = portlet_name
 

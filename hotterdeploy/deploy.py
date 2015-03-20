@@ -57,7 +57,7 @@ class Deploy(Thread):
         start = datetime.datetime.now()
         with open(os.path.join(self.tomcat_directory, 'logs/catalina.out')) as f:
             # Start listening to the log
-            f.seek(0, 2) # go to end
+            f.seek(0, 2)  # go to end
             p = f.tell()
             if action():
                 while True:
@@ -65,13 +65,13 @@ class Deploy(Thread):
                     latest_data = f.read()
                     p = f.tell()
                     if latest_data:
-                        #print latest_data
-                        #print str(p).center(10).center(80, '=')
+                        # print latest_data
+                        # print str(p).center(10).center(80, '=')
                         print '.',
                         if matcher.search(latest_data):
                             break
 
-                        #Liferay 6.1 hack
+                        # Liferay 6.1 hack
                         if latest_data.find('Initializing Spring root WebApplicationContext'):
                             break
                         if latest_data.find('Closing Spring root WebApplicationContext'):
@@ -98,7 +98,7 @@ class Deploy(Thread):
             LOG.info('Deploying {0}'.format(bundle_name))
             self._wait_for_string_in_log('for '+bundle_name+' (\w+) available for use', lambda: self._deploy())
             self.hotterDeployer.trigger_browser_reload()
-        except DeploymentTimedOutException as e:
+        except DeploymentTimedOutException:
             LOG.error('Deployment of {0} failed!!!'.format(bundle_name))
 
     def run(self):
@@ -119,7 +119,7 @@ def check_for_lib_diffs(war_path, temp_portlet_path):
                 with open(os.path.join(temp_portlet_path, 'WEB-INF/lib/', lib)) as jar:
                     jars['WEB-INF/lib/'+lib] = binascii.crc32(jar.read())
             else:
-                jars['WEB-INF/lib/'+lib] = None # directory assume changed
+                jars['WEB-INF/lib/'+lib] = None  # directory assume changed
 
     # Process the war to be deployed
     with ZipFile(war_path, 'r') as war:
@@ -128,7 +128,7 @@ def check_for_lib_diffs(war_path, temp_portlet_path):
         try:
             with war.open('WEB-INF/liferay-plugin-package.properties') as prop:
                 p = Properties()
-                #p.load(prop) does not work
+                # p.load(prop) does not work
                 p._Properties__parse(prop.readlines())
 
                 dep_jars.extend(p['portal-dependency-jars'].split(','))
@@ -143,7 +143,7 @@ def check_for_lib_diffs(war_path, temp_portlet_path):
                     crc = jars.get(info.filename, None)
                     if crc:
                         with war.open(info.filename) as lib:
-                            crco = binascii.crc32(lib.read()) #info.CRC
+                            crco = binascii.crc32(lib.read())  # info.CRC
                         jars[info.filename] = crco == crc
                     else:
                         jars[info.filename] = None
@@ -154,11 +154,11 @@ def check_for_lib_diffs(war_path, temp_portlet_path):
     for filename, crc in jars.items():
         if crc == 'LR_DEP':
             pass
-        elif crc == True:
+        elif crc is True:
             pass
-        elif crc == None:
+        elif crc is None:
             LOG.info('{0} is missing'.format(filename))
-        elif crc == False:
+        elif crc is False:
             LOG.info('{0} is out of date'.format(filename))
             needs_undeploy = True
         else:

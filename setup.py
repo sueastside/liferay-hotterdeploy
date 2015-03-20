@@ -10,12 +10,20 @@ config = {
     'download_url': 'https://github.com/sueastside/liferay-hotterdeploy',
     'author_email': 'No, thanks',
     'version': '0.1',
-    'install_requires': ['pyinotify', 'pyjavaproperties', 'tornado>=2.2.0'],
+    'install_requires': [
+        'Jinja2',
+        'watchdog',
+        'pyjavaproperties',
+        'pyScss',
+        'tornado>=2.2.0',
+    ],
     'packages': ['hotterdeploy'],
     'scripts': [],
     'name': 'hotterdeploy',
-    'entry_points':{
-          'console_scripts':['hotterdeploy = hotterdeploy.app:main']
+    'entry_points': {
+        'console_scripts': [
+            'hotterdeploy = hotterdeploy.app:main',
+        ],
     }
 }
 

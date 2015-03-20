@@ -5,18 +5,27 @@ You need Tornado 2.2.0 or higher
 https://launchpad.net/~chris-lea/+archive/python-tornado/
 https://launchpad.net/~chris-lea/+archive/python-pycares
 '''
-import os
+
 import logging
+from datetime import datetime
+from pkg_resources import resource_string
 from tornado.ioloop import IOLoop
 from tornado import escape
-from tornado.web import Application, RequestHandler
+from tornado.web import RequestHandler
+from tornado import web
 from tornado.websocket import WebSocketHandler
 from tornado.util import ObjectDict
+
+from jinja2 import Template
+
 
 class LiveReloadHandler(WebSocketHandler):
     waiters = set()
 
     def allow_draft76(self):
+        return True
+
+    def check_origin(self, origin):
         return True
 
     def on_close(self):
@@ -60,20 +69,17 @@ class LiveReloadHandler(WebSocketHandler):
         """
         message = ObjectDict(escape.json_decode(message))
         if message.command == 'hello':
-            handshake = {}
-            handshake['command'] = 'hello'
-            handshake['protocols'] = [
-                'http://livereload.com/protocols/official-7',
-                'http://livereload.com/protocols/official-8',
-                'http://livereload.com/protocols/official-9',
-                'http://livereload.com/protocols/2.x-origin-version-negotiation',
-                'http://livereload.com/protocols/2.x-remote-control'
-            ]
-            handshake['serverName'] = 'livereload-tornado'
+            handshake = {
+                'command': 'hello',
+                'protocols': [
+                    'http://livereload.com/protocols/official-7',
+                ],
+                'serverName': 'livereload-tornado',
+            }
             self.send_message(handshake)
 
         if message.command == 'info' and 'url' in message:
-            #print '- Client connected for url {0}'.format(message.url)
+            # print '- Client connected for url {0}'.format(message.url)
             self.url = message.url
             LiveReloadHandler.waiters.add(self)
             if hasattr(LiveReloadHandler, 'update_status'):
@@ -81,18 +87,9 @@ class LiveReloadHandler(WebSocketHandler):
 
 
 class LiveReloadJSHandler(RequestHandler):
-    def initialize(self, port):
-        self._port = port
-
     def get(self):
-        js = os.path.join(
-            os.path.abspath(os.path.dirname(__file__)), 'livereload.js',
-        )
         self.set_header('Content-Type', 'application/javascript')
-        with open(js, 'r') as f:
-            content = f.read()
-            content = content.replace('{{port}}', str(self._port))
-            self.write(content)
+        self.write(resource_string(__name__, 'livereload.js'))
 
 
 class ForceReloadHandler(RequestHandler):
@@ -112,46 +109,72 @@ class ForceReloadHandler(RequestHandler):
         self.write('ok')
 
 
+class LiveReloadInfoHandler(RequestHandler):
+    def get(self):
+        self.set_header('Content-Type', 'text/html')
+        if hasattr(LiveReloadInfoHandler, 'hotterDeployer'):
+            tmpl = resource_string(__name__, 'index.html')
+            template = Template(tmpl)
+            data = template.render(
+                ctx=self.hotterDeployer,
+                waiters=LiveReloadHandler.waiters,
+                now=datetime.now()
+                )
+            self.write(data)
+        else:
+            self.write('''
+            <html>
+                <body>
+                Not initialized
+                </body>
+            </html>
+            ''')
+
+
 class Server(object):
-    def __init__(self):
+    def __init__(self, port=None, host=None, liveport=None):
         self.host = None
         self.port = 35729
-
-    def application(self):
-        handlers = [
-            (r'/livereload', LiveReloadHandler),
-            (r'/forcereload', ForceReloadHandler),
-            (r'/livereload.js', LiveReloadJSHandler, dict(port=self.port)),
-        ]
-
-        return Application(handlers=handlers, debug=True)
-
-    def serve(self, port=None, host=None):
-        """Start serve the server with the given port.
-
-        :param port: serve on this port, default is 5500
-        :param host: serve on this hostname, default is 0.0.0.0
-        """
         if port:
             self.port = port
-        if host is None:
-            host = ''
 
-        self.application().listen(self.port, address=host)
+        self.host = host or '0.0.0.0'
+        self.liveport = liveport
 
-        self.host = host or '127.0.0.1'
-        #print('Serving on %s:%s' % (self.host, self.port))
+    def application(self, port, host, liveport=None, debug=True):
+        if liveport is None:
+            liveport = port
+
+        live_handlers = [
+            (r'/livereload', LiveReloadHandler),
+            (r'/forcereload', ForceReloadHandler),
+            (r'/livereload.js', LiveReloadJSHandler),
+            (r'/info', LiveReloadInfoHandler),
+        ]
+
+        live = web.Application(handlers=live_handlers, debug=debug)
+        live.listen(liveport, address=host)
+
+    def serve(self):
+        """Start serve the server with the given port.
+
+        :param port: serve on this port, default is 35729
+        :param host: serve on this hostname, default is 0.0.0.0
+        """
+        self.application(self.port, self.host, liveport=self.liveport)
 
         try:
             IOLoop.instance().start()
-        except KeyboardInterrupt:
+        except KeyboardInterrupt as e:
             print('Shutting down...')
+            raise e
 
     def stop(self):
         IOLoop.instance().stop()
 
     def reload(self, path=None):
         LiveReloadHandler.reload(path)
+
 
 def main():
     server = Server()

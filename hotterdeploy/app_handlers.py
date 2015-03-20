@@ -5,6 +5,8 @@ import logging
 
 from watchdog.events import FileSystemEventHandler
 
+from scss.compiler import compile_file
+
 from .utilities import is_jsp_hook
 from .deploy import Deploy
 
@@ -17,7 +19,10 @@ class OnDeployHandler(FileSystemEventHandler):
         self.hotterDeployer = weakref.proxy(hotterDeployer)
 
     def on_created(self, event):
-        d = Deploy(self.hotterDeployer, event.src_path, self.hotterDeployer.tomcat_directory)
+        d = Deploy(self.hotterDeployer,
+                   event.src_path,
+                   self.hotterDeployer.tomcat_directory
+                   )
         d.start()
 
 
@@ -25,6 +30,7 @@ class OnTempDeployHandler(FileSystemEventHandler):
     def __init__(self, hotterDeployer):
         super(OnTempDeployHandler, self).__init__()
         self.hotterDeployer = weakref.proxy(hotterDeployer)
+
     def process_default(self, event):
         self.hotterDeployer._scan_temp()
 
@@ -39,6 +45,7 @@ class OnWebappsDeployHandler(FileSystemEventHandler):
     def __init__(self, hotterDeployer):
         super(OnWebappsDeployHandler, self).__init__()
         self.hotterDeployer = weakref.proxy(hotterDeployer)
+
     def process_default(self, event):
         self.hotterDeployer._scan_webapps()
 
@@ -49,8 +56,6 @@ class OnWebappsDeployHandler(FileSystemEventHandler):
         self.process_default(event)
 
 
-
-
 class WorkSpaceHandler(FileSystemEventHandler):
     def __init__(self, hotterDeployer):
         super(WorkSpaceHandler, self).__init__()
@@ -58,7 +63,8 @@ class WorkSpaceHandler(FileSystemEventHandler):
 
     def dispatch(self, event):
         path = event.src_path
-        if path.find('.svn') == -1 and path.find('src/main/webapp/WEB-INF') != -1:
+        if (path.find('.svn') == -1 and
+                path.find('src/main/webapp/WEB-INF') != -1):
             super(WorkSpaceHandler, self).dispatch(event)
 
     def on_created(self, event):
@@ -108,7 +114,7 @@ class OnFileChangedHandler(FileSystemEventHandler):
                 if not os.path.exists(dest_path+'.hotterdeploy'):
                     shutil.copy2(dest_path, dest_path+'.hotterdeploy')
             else:
-                #Find latest dir
+                # Find latest dir
                 latest_subdir = self.hotterDeployer.find_latest_temp_dir(portlet_name)
 
             if not latest_subdir:
@@ -117,14 +123,51 @@ class OnFileChangedHandler(FileSystemEventHandler):
                 dest_path = os.path.join(latest_subdir, rel_path)
                 LOG.info('- Copying {0} ({1}) [{2}]'.format(rel_path, portlet_name, os.path.basename(latest_subdir)))
                 if not os.path.exists(os.path.dirname(dest_path)):
-                  os.makedirs(os.path.dirname(dest_path))
+                    os.makedirs(os.path.dirname(dest_path))
                 print 'dest_path', dest_path
-                shutil.copy2(event.src_path, dest_path)
 
-                if rel_path.endswith('.css'):
-                    self.hotterDeployer.trigger_browser_reload(portlet_name+'/'+rel_path)
+                if rel_path.endswith('.js'):
+                    shutil.copy2(event.src_path, dest_path)
+                    static_dir = '/home/sueastside/Projects/CreDoc/static'
+                    dest_path = os.path.join(static_dir, portlet_name, rel_path)
+                    if not os.path.exists(os.path.dirname(dest_path)):
+                        os.makedirs(os.path.dirname(dest_path))
+                    shutil.copy2(event.src_path, dest_path)
+                    self.hotterDeployer.trigger_browser_reload()
+                elif rel_path.endswith('.css'):
+                    shutil.copy2(event.src_path, dest_path)
+
+                    print 'compiling scss'
+                    #print compile_file(event.src_path)
+
+                    import sass
+
+                    try:
+                        print '-----------'
+                        data = sass.compile(filename=event.src_path,
+                                            output_style='nested',
+                                            include_paths=os.path.dirname(event.src_path))
+                        print '-----------'
+
+                        # TODO: copy output
+                        # /home/sueastside/Projects/CreDoc/static - credoc-theme
+                        print 'output for portlet ', portlet_name, rel_path
+
+                        static_dir = '/home/sueastside/Projects/CreDoc/static'
+                        dest_path = os.path.join(static_dir, portlet_name, rel_path)
+
+                        if not os.path.exists(os.path.dirname(dest_path)):
+                            os.makedirs(os.path.dirname(dest_path))
+
+                        with open(dest_path, 'wb') as f:
+                            f.write(data)
+
+                        self.hotterDeployer.trigger_browser_reload(portlet_name+'/'+rel_path)
+                    except sass.CompileError as e:
+                        print e
                 else:
                     self.hotterDeployer.trigger_browser_reload()
+                    shutil.copy2(event.src_path, dest_path)
 
 
 class OnClassChangedHandler(FileSystemEventHandler):
@@ -134,8 +177,10 @@ class OnClassChangedHandler(FileSystemEventHandler):
 
     def dispatch(self, event):
         path = event.src_path
-        if path.find('.svn') == -1 and path.find('target/classes') != -1:
-            super(OnClassChangedHandler, self).dispatch(event)
+        if (path.find('.svn') == -1
+            and path.find('target/classes') != -1
+            and os.path.isfile(path)):
+                super(OnClassChangedHandler, self).dispatch(event)
 
     def on_modified(self, event):
         cwd = event.src_path.split('/target/classes')[0]
@@ -157,11 +202,11 @@ class OnClassChangedHandler(FileSystemEventHandler):
                 dest_path = os.path.join(latest_subdir, 'WEB-INF', 'classes', rel_path)
                 print '- Copying {0} ({1}) [{2}]'.format(rel_path, portlet_name, os.path.basename(latest_subdir))
                 if not os.path.exists(os.path.dirname(dest_path)):
-                  os.makedirs(os.path.dirname(dest_path))
+                    os.makedirs(os.path.dirname(dest_path))
                 print 'OnClassChangedHandler::on_modified', dest_path
-                shutil.copy2(event.pathname, dest_path)
+                shutil.copy2(event.src_path, dest_path)
 
-                #self.hotterDeployer.trigger_browser_reload()
+                # self.hotterDeployer.trigger_browser_reload()
 
                 from threading import Timer
                 t = Timer(1.2, self.hotterDeployer.trigger_browser_reload)

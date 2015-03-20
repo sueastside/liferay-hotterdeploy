@@ -21,7 +21,10 @@ when it detects a change.
 
 Notes
 -----
-As this uses inotify to detect changed files, it is linux only at the moment.
+~~As this uses inotify to detect changed files, it is linux only at the moment.~~
+
+Moved from pyinotify to watchdog for detecting changes, so should support all platforms now.
+You can also sepecify --poll on the commandline, allowing to switch to a polling scheme for file detection in case your underlying filesystem does not support FS events (vboxfs for example)
 
 Installation
 -----
