@@ -12,6 +12,12 @@ from .deploy import Deploy
 
 LOG = logging.getLogger(__name__)
 
+def normalize_path(path):
+    return path.replace('/', os.sep)
+
+def contains_path(path, sub_path):
+    return path.find(normalize_path(sub_path)) != -1
+
 
 class OnDeployHandler(FileSystemEventHandler):
     def __init__(self, hotterDeployer):
@@ -62,10 +68,13 @@ class WorkSpaceHandler(FileSystemEventHandler):
         self.hotterDeployer = weakref.proxy(hotterDeployer)
 
     def dispatch(self, event):
+        LOG.debug('WorkSpaceHandler::dispatch {0} {1}'.format(event.src_path, event))
         path = event.src_path
         if (path.find('.svn') == -1 and
-                path.find('src/main/webapp/WEB-INF') != -1):
+                contains_path(path, 'src/main/webapp/WEB-INF')):
             super(WorkSpaceHandler, self).dispatch(event)
+        else:
+            LOG.debug('WorkSpaceHandler::dispatch ignored {0}'.format(event.src_path))
 
     def on_created(self, event):
         self.process_default(event)
@@ -91,18 +100,22 @@ class OnFileChangedHandler(FileSystemEventHandler):
 
     def dispatch(self, event):
         path = event.src_path
-        if path.find('.svn') == -1 and path.find('src/main/webapp') != -1:
+        print 'FF', os.sep
+        LOG.debug('OnFileChangedHandler::dispatch {0} {1}'.format(event.src_path, event))
+        if path.find('.svn') == -1 and contains_path(path, 'src/main/webapp'):
             super(OnFileChangedHandler, self).dispatch(event)
+        else:
+            LOG.debug('OnFileChangedHandler::dispatch ignored {0}'.format(event.src_path))
 
     def on_modified(self, event):
-        cwd = event.src_path.split('/src/main/webapp')[0]
+        cwd = event.src_path.split(normalize_path('/src/main/webapp'))[0]
 
         # Handle portlets
         portlet_name = self.hotterDeployer.portlets.get(cwd, None)
         if portlet_name:
             if all(not event.src_path.endswith(ext) for ext in self.extensions):
                 return
-            rel_path = event.src_path.split(cwd+'/src/main/webapp')[1][1:]
+            rel_path = event.src_path.split(cwd+normalize_path('/src/main/webapp'))[1][1:]
 
             jsp_hook = is_jsp_hook(cwd, rel_path)
             if jsp_hook:
@@ -128,14 +141,14 @@ class OnFileChangedHandler(FileSystemEventHandler):
 
                 if rel_path.endswith('.js'):
                     shutil.copy2(event.src_path, dest_path)
-                    static_dir = '/home/sueastside/Projects/CreDoc/static'
-                    dest_path = os.path.join(static_dir, portlet_name, rel_path)
-                    if not os.path.exists(os.path.dirname(dest_path)):
-                        os.makedirs(os.path.dirname(dest_path))
-                    shutil.copy2(event.src_path, dest_path)
+                    if self.hotterDeployer.statics_directory:
+                        dest_path = os.path.join(self.hotterDeployer.statics_directory, portlet_name, rel_path)
+                        if not os.path.exists(os.path.dirname(dest_path)):
+                            os.makedirs(os.path.dirname(dest_path))
+                        shutil.copy2(event.src_path, dest_path)
                     self.hotterDeployer.trigger_browser_reload()
                 elif rel_path.endswith('.css'):
-                    shutil.copy2(event.src_path, dest_path)
+                    #shutil.copy2(event.src_path, dest_path)
 
                     print 'compiling scss'
                     #print compile_file(event.src_path)
@@ -149,18 +162,21 @@ class OnFileChangedHandler(FileSystemEventHandler):
                                             include_paths=os.path.dirname(event.src_path))
                         print '-----------'
 
+                        with open(dest_path, 'wb') as f:
+                            f.write(data)
+
                         # TODO: copy output
                         # /home/sueastside/Projects/CreDoc/static - credoc-theme
                         print 'output for portlet ', portlet_name, rel_path
 
-                        static_dir = '/home/sueastside/Projects/CreDoc/static'
-                        dest_path = os.path.join(static_dir, portlet_name, rel_path)
+                        if self.hotterDeployer.statics_directory:
+                            dest_path = os.path.join(self.hotterDeployer.statics_directory, portlet_name, rel_path)
 
-                        if not os.path.exists(os.path.dirname(dest_path)):
-                            os.makedirs(os.path.dirname(dest_path))
+                            if not os.path.exists(os.path.dirname(dest_path)):
+                                os.makedirs(os.path.dirname(dest_path))
 
-                        with open(dest_path, 'wb') as f:
-                            f.write(data)
+                            with open(dest_path, 'wb') as f:
+                                f.write(data)
 
                         self.hotterDeployer.trigger_browser_reload(portlet_name+'/'+rel_path)
                     except sass.CompileError as e:
