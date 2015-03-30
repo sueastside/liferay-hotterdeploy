@@ -72,12 +72,14 @@ class HotterDeployer(object):
             tomcat_directory,
             hotterdeploy_dir,
             liferay_context,
-            do_polling
+            do_polling,
+            statics_directory
             ):
         self.do_polling = do_polling
         self.workspace_directory = workspace_directory
         self.tomcat_directory = tomcat_directory
         self.liferay_context = liferay_context
+        self.statics_directory = statics_directory
         self.portlets = {}
         self.themes = {}
         self.deploys = {}
@@ -211,6 +213,7 @@ def main():
     parser.add_argument('--hotterdeploy_dir', default='', help='where to place the hotterdeploy directory')
     parser.add_argument('--liferay_context', default='ROOT', help='the liferay context path')
     parser.add_argument('--poll', action='store_true', help='poll instead of listen for FS events, needed on network shares and vboxfs')
+    parser.add_argument('--statics_dir', default=None, help='where to place the static resources')
 
     parser.add_argument(
         '-v',
@@ -247,7 +250,8 @@ def main():
                               args.tomcat_directory,
                               args.hotterdeploy_dir,
                               args.liferay_context,
-                              args.poll)
+                              args.poll,
+                              args.statics_dir)
 
     deployer.memory_handler = memory_handler
     deployer.start()
