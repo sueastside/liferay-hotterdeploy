@@ -8,7 +8,7 @@ from watchdog.events import FileSystemEventHandler
 from .utilities import is_jsp_hook
 from .deploy import Deploy
 
-import .sassc
+from . import sassc
 
 LOG = logging.getLogger(__name__)
 
@@ -150,29 +150,27 @@ class OnFileChangedHandler(FileSystemEventHandler):
                 elif rel_path.endswith('.css'):
                     #shutil.copy2(event.src_path, dest_path)
 
-                    try:
-                        print 'compiling scss'
-                        data = sassc.compile(filename=event.src_path)
+                    print 'compiling scss'
+                    data = sassc.compile(event.src_path)
+
+                    with open(dest_path, 'wb') as f:
+                        f.write(data)
+
+                    # TODO: copy output
+                    # /home/sueastside/Projects/CreDoc/static - credoc-theme
+                    print 'output for portlet ', portlet_name, rel_path
+
+                    if self.hotterDeployer.statics_directory:
+                        dest_path = os.path.join(self.hotterDeployer.statics_directory, portlet_name, rel_path)
+
+                        if not os.path.exists(os.path.dirname(dest_path)):
+                            os.makedirs(os.path.dirname(dest_path))
 
                         with open(dest_path, 'wb') as f:
                             f.write(data)
 
-                        # TODO: copy output
-                        # /home/sueastside/Projects/CreDoc/static - credoc-theme
-                        print 'output for portlet ', portlet_name, rel_path
+                    self.hotterDeployer.trigger_browser_reload(portlet_name+'/'+rel_path)
 
-                        if self.hotterDeployer.statics_directory:
-                            dest_path = os.path.join(self.hotterDeployer.statics_directory, portlet_name, rel_path)
-
-                            if not os.path.exists(os.path.dirname(dest_path)):
-                                os.makedirs(os.path.dirname(dest_path))
-
-                            with open(dest_path, 'wb') as f:
-                                f.write(data)
-
-                        self.hotterDeployer.trigger_browser_reload(portlet_name+'/'+rel_path)
-                    except sass.CompileError as e:
-                        print e
                 else:
                     self.hotterDeployer.trigger_browser_reload()
                     shutil.copy2(event.src_path, dest_path)
