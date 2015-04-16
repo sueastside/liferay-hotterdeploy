@@ -5,10 +5,10 @@ import logging
 
 from watchdog.events import FileSystemEventHandler
 
-from scss.compiler import compile_file
-
 from .utilities import is_jsp_hook
 from .deploy import Deploy
+
+import .sassc
 
 LOG = logging.getLogger(__name__)
 
@@ -150,17 +150,9 @@ class OnFileChangedHandler(FileSystemEventHandler):
                 elif rel_path.endswith('.css'):
                     #shutil.copy2(event.src_path, dest_path)
 
-                    print 'compiling scss'
-                    #print compile_file(event.src_path)
-
-                    import sass
-
                     try:
-                        print '-----------'
-                        data = sass.compile(filename=event.src_path,
-                                            output_style='nested',
-                                            include_paths=os.path.dirname(event.src_path))
-                        print '-----------'
+                        print 'compiling scss'
+                        data = sassc.compile(filename=event.src_path)
 
                         with open(dest_path, 'wb') as f:
                             f.write(data)
