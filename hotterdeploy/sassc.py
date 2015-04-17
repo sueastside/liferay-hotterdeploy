@@ -1,13 +1,21 @@
 #pip install pyScss
 
 from scss.compiler import Compiler, compile_file
+from scss.errors import SassEvaluationError
+
+class SassException(Exception):
+    def __init__(self, cause):
+        super(SassException).__init__(cause)
 
 
 
 def compile(file_name):
     #data = Compiler().compile_string("a { color: red + green; }")
-    data = compile_file(file_name)
-    return data
+    try:
+        data = compile_file(file_name)
+        return data
+    except SassEvaluationError as e:
+        raise SassException(e)
 
 
 
