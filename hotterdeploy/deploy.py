@@ -55,7 +55,8 @@ class Deploy(Thread):
     def _wait_for_string_in_log(self, string, action):
         matcher = re.compile(string)
         start = datetime.datetime.now()
-        with open(os.path.join(self.tomcat_directory, 'logs/catalina.out')) as f:
+        catalina_log = format('logs/catalina.%s-%02d-%02d.out' % (start.year,start.month,start.day)) if os.name == 'nt' else 'logs/catalina.out'
+        with open(os.path.join(self.tomcat_directory, catalina_log)) as f:
             # Start listening to the log
             f.seek(0, 2)  # go to end
             p = f.tell()
